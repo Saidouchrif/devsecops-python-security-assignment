@@ -1,50 +1,79 @@
+# Nom du pipeline affiché dans GitHub Actions
 name: DevSecOps Pipeline
 
+# Déclenchement du pipeline
+# Ici, la pipeline s’exécute automatiquement à chaque push sur la branche main
 on:
   push:
     branches: [ "main" ]
 
+# Permissions nécessaires pour les outils de sécurité (CodeQL)
 permissions:
   contents: read
   security-events: write
 
 jobs:
+  # Job principal de sécurité
   security:
+    # Le job s’exécute sur une machine virtuelle Ubuntu fournie par GitHub
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout
+    # Étape 1 : Récupération du code source depuis le dépôt GitHub
+    - name: Checkout source code
       uses: actions/checkout@v3
 
-    # 1️⃣ CodeQL
-    - name: Init CodeQL
+    # ================================
+    # 1️⃣ Analyse SAST avec CodeQL
+    # ================================
+    # Initialisation de CodeQL pour analyser le code Python
+    - name: Initialize CodeQL
       uses: github/codeql-action/init@v3
       with:
         languages: python
 
-    - name: Analyze CodeQL
+    # Lancement de l’analyse CodeQL
+    # Cette étape détecte les vulnérabilités dans le code source
+    - name: Run CodeQL analysis
       uses: github/codeql-action/analyze@v3
 
-    # 2️⃣ Bandit
+    # =========================================
+    # 2️⃣ Analyse de sécurité Python avec Bandit
+    # =========================================
+    # Installation de l’outil Bandit
     - name: Install Bandit
       run: pip install bandit
 
-    - name: Run Bandit
-      run: bandit -r api --severity-level high
+    # Analyse du code Python contenu dans le dossier app
+    # Le pipeline échoue si des vulnérabilités de sévérité HIGH sont détectées
+    - name: Run Bandit scan
+      run: bandit -r app --severity-level high
 
-    # 3️⃣ Dependency Scan
+    # =========================================
+    # 3️⃣ Scan des dépendances applicatives
+    # =========================================
+    # Installation de l’outil Safety
     - name: Install Safety
       run: pip install safety
 
-    - name: Dependency check
-      run: safety scan -r requirements.txt
+    # Analyse des dépendances listées dans requirements.txt
+    # Cette étape permet de détecter les bibliothèques vulnérables
+    - name: Dependency vulnerability check
+      run: safety check -r requirements.txt --full-report
 
-    # 4️⃣ Docker build
+    # ================================
+    # 4️⃣ Construction de l’image Docker
+    # ================================
+    # Build de l’image Docker de l’application
     - name: Build Docker image
       run: docker build -t devsecops-app .
 
-    # 5️⃣ Trivy
-    - name: Trivy scan
+    # =========================================
+    # 5️⃣ Scan de l’image Docker avec Trivy
+    # =========================================
+    # Analyse de l’image Docker afin de détecter des CVE
+    # La pipeline échoue si des vulnérabilités CRITICAL ou HIGH sont trouvées
+    - name: Trivy image scan
       uses: aquasecurity/trivy-action@master
       with:
         image-ref: devsecops-app

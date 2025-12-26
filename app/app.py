@@ -1,128 +1,91 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request
 import sqlite3
+import pickle
 import subprocess
-import bcrypt
+import hashlib
 import os
 import logging
-import re
 
 app = Flask(__name__)
 
-# ==============================
-# 🔐 Secure configuration
-# ==============================
+# SECRET HARDCODÉ (mauvaise pratique)
+API_KEY = "API-KEY-123456"
 
-API_KEY = os.getenv("API_KEY", "default-key")  # secret via env var
+# Logging non sécurisé
+logging.basicConfig(level=logging.DEBUG)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
-
-DATABASE = "users.db"
-
-# ==============================
-# 🗄 Database helper
-# ==============================
-
-def get_db():
-    return sqlite3.connect(DATABASE)
-
-# ==============================
-# 🔐 Auth endpoint (SQL Injection FIX)
-# ==============================
 
 @app.route("/auth", methods=["POST"])
 def auth():
-    data = request.get_json()
-    username = data.get("username", "")
-    password = data.get("password", "").encode()
+    username = request.json.get("username")
+    password = request.json.get("password")
 
-    conn = get_db()
+    # SQL Injection
+    conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
+    query = f"SELECT * FROM users WHERE username='{username}' AND password='{password}'"
+    cursor.execute(query)
 
-    cursor.execute(
-        "SELECT password FROM users WHERE username = ?",
-        (username,)
-    )
-    row = cursor.fetchone()
-    conn.close()
+    if cursor.fetchone():
+        return {"status": "authenticated"}
 
-    if row and bcrypt.checkpw(password, row[0]):
-        return jsonify({"status": "authenticated"})
+    return {"status": "denied"}
 
-    return jsonify({"status": "denied"}), 401
 
-# ==============================
-# 🚫 Command Injection FIX
-# ==============================
+@app.route("/exec", methods=["POST"])
+def exec_cmd():
+    cmd = request.json.get("cmd")
 
-@app.route("/ping", methods=["POST"])
-def ping():
-    data = request.get_json()
-    host = data.get("host", "")
+    # Command Injection
+    output = subprocess.check_output(cmd, shell=True)
+    return {"output": output.decode()}
 
-    # validation stricte
-    if not re.match(r"^[a-zA-Z0-9.\-]+$", host):
-        return jsonify({"error": "Invalid host"}), 400
 
-    result = subprocess.run(
-        ["ping", "-c", "1", host],
-        capture_output=True,
-        text=True
-    )
+@app.route("/deserialize", methods=["POST"])
+def deserialize():
+    data = request.data
 
-    return jsonify({"output": result.stdout})
+    # Désérialisation dangereuse
+    obj = pickle.loads(data)
+    return {"object": str(obj)}
 
-# ==============================
-# 🔐 Strong hashing (MD5 FIX)
-# ==============================
 
-@app.route("/hash", methods=["POST"])
-def hash_text():
-    text = request.get_json().get("text", "").encode()
+@app.route("/encrypt", methods=["POST"])
+def encrypt():
+    text = request.json.get("text", "")
 
-    hashed = bcrypt.hashpw(text, bcrypt.gensalt())
-    return jsonify({"bcrypt": hashed.decode()})
+    # Chiffrement faible
+    hashed = hashlib.md5(text.encode()).hexdigest()
+    return {"hash": hashed}
 
-# ==============================
-# 🚫 Path Traversal FIX
-# ==============================
 
 @app.route("/file", methods=["POST"])
 def read_file():
-    filename = request.get_json().get("filename", "")
+    filename = request.json.get("filename")
 
-    # whitelist
-    allowed_files = ["example.txt"]
+    # Path Traversal
+    with open(filename, "r") as f:
+        return {"content": f.read()}
 
-    if filename not in allowed_files:
-        return jsonify({"error": "Access denied"}), 403
 
-    with open(filename, "r", encoding="utf-8") as f:
-        return jsonify({"content": f.read()})
+@app.route("/debug", methods=["GET"])
+def debug():
+    # Divulgation d'informations sensibles
+    return {
+        "api_key": API_KEY,
+        "env": dict(os.environ),
+        "cwd": os.getcwd()
+    }
 
-# ==============================
-# 🚫 Info disclosure FIX
-# ==============================
-
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify({"status": "ok"})
-
-# ==============================
-# 🚫 Log Injection FIX
-# ==============================
 
 @app.route("/log", methods=["POST"])
 def log_data():
-    data = request.get_json()
-    logging.info("User request received")
-    return jsonify({"status": "logged"})
+    data = request.json
 
-# ==============================
-# 🚀 App start
-# ==============================
+    # Log Injection
+    logging.info(f"User input: {data}")
+    return {"status": "logged"}
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5000, debug=True)

@@ -37,7 +37,7 @@ jobs:
       run: pip install safety
 
     - name: Dependency check
-      run: safety check -r requirements.txt
+      run: safety scan -r requirements.txt
 
     # 4️⃣ Docker build
     - name: Build Docker image

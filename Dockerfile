@@ -1,8 +1,12 @@
-FROM python:3.8
+FROM python:3.11-slim
 
 WORKDIR /app
-COPY api/ .
-RUN pip install flask bcrypt
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY api/ ./api
 
 EXPOSE 5000
-CMD ["python", "app.py"]
+
+CMD ["python", "api/app.py"]

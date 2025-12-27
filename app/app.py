@@ -31,14 +31,22 @@ def auth():
 
     return {"status": "denied"}
 
-
+# Command Injection | probleme
 @app.route("/exec", methods=["POST"])
 def exec_cmd():
-    cmd = request.json.get("cmd")
+    data = request.get_json() or {}
+    host = data.get("host", "")
 
-    # Command Injection
-    output = subprocess.check_output(cmd, shell=True)
-    return {"output": output.decode()}
+    if not re.match(r"^[a-zA-Z0-9.\-]+$", host):
+        return jsonify({"error": "Invalid host"}), 400
+
+    result = subprocess.run(
+        ["ping", "-c", "1", host],
+        capture_output=True,
+        text=True,
+        check=False
+    )
+    return jsonify({"output": result.stdout})
 
 
 @app.route("/deserialize", methods=["POST"])
@@ -50,14 +58,15 @@ def deserialize():
     return {"object": str(obj)}
 
 
+
+#hashed = hashlib.md5(text.encode()).hexdigest() probleme
 @app.route("/encrypt", methods=["POST"])
 def encrypt():
-    text = request.json.get("text", "")
+    data = request.get_json() or {}
+    text = (data.get("text", "")).encode()
 
-    # Chiffrement faible
-    hashed = hashlib.md5(text.encode()).hexdigest()
-    return {"hash": hashed}
-
+    hashed = bcrypt.hashpw(text, bcrypt.gensalt()).decode()
+    return jsonify({"hash": hashed})
 
 @app.route("/file", methods=["POST"])
 def read_file():
@@ -86,6 +95,9 @@ def log_data():
     logging.info(f"User input: {data}")
     return {"status": "logged"}
 
+#app.run(..., debug=True) probleme
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    debug_mode = os.getenv("FLASK_DEBUG", "0") == "1"
+    app.run(host="0.0.0.0", port=5000, debug=debug_mode)
+
